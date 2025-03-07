@@ -1,0 +1,263 @@
+---
+// src/components/shopify/FeaturedProducts.astro
+// This component fetches and displays featured products from Shopify
+
+import { Image } from "astro:assets";
+import { getFeaturedProducts } from "../../utils/shopify";
+
+// Fetch products with better error handling
+let featuredProducts = [];
+let isLoading = true;
+let error = null;
+
+try {
+  featuredProducts = await getFeaturedProducts(3);
+  isLoading = false;
+} catch (err) {
+  console.error("Error loading featured products:", err);
+  error = err.message;
+  isLoading = false;
+
+  // Fallback to placeholder data if API call fails
+  featuredProducts = [
+    {
+      id: "gid://shopify/Product/1",
+      title: "Premium T-Shirt",
+      price: "$29.99",
+      image: "/placeholder-product.png",
+      handle: "premium-tshirt",
+      description: "Soft, comfortable cotton t-shirt with modern design.",
+      availableForSale: true,
+    },
+    {
+      id: "gid://shopify/Product/2",
+      title: "Designer Jeans",
+      price: "$89.99",
+      image: "/placeholder-product.png",
+      handle: "designer-jeans",
+      description: "Stylish jeans with perfect fit and premium quality.",
+      availableForSale: true,
+    },
+    {
+      id: "gid://shopify/Product/3",
+      title: "Cotton Hoodie",
+      price: "$59.99",
+      image: "/placeholder-product.png",
+      handle: "cotton-hoodie",
+      description: "Warm and comfortable hoodie for everyday wear.",
+      availableForSale: true,
+    },
+  ];
+}
+---
+
+<section aria-labelledby="featured-products-heading">
+  <h2 id="featured-products-heading" class="sr-only">Featured Products</h2>
+
+  {
+    isLoading && (
+      <div class="flex justify-center items-center py-20">
+        <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500" />
+      </div>
+    )
+  }
+
+  {
+    error && (
+      <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg
+              class="h-5 w-5 text-red-400"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-red-700">
+              There was an error loading featured products. Showing fallback
+              products instead.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  {
+    !isLoading && (
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {featuredProducts.map((product) => (
+          <div class="bg-white rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group">
+            <a
+              href={`/products/${product.handle}`}
+              class="block"
+              aria-label={`View details for ${product.title}`}
+            >
+              <div class="relative h-48 overflow-hidden">
+                <img
+                  src={product.image}
+                  alt={product.title}
+                  class="w-full h-full object-cover transition duration-500 ease-in-out group-hover:scale-105"
+                  onerror="this.src='/placeholder-product.png'; this.onerror=null;"
+                  loading="lazy"
+                  width="400"
+                  height="300"
+                />
+
+                <div class="absolute top-0 left-0 m-2">
+                  <span class="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded-full inline-flex items-center">
+                    <svg class="w-3 h-3 mr-1 fill-current" viewBox="0 0 20 20">
+                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                    </svg>
+                    Featured
+                  </span>
+                </div>
+
+                {!product.availableForSale && (
+                  <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
+                    <span class="bg-white text-gray-800 text-sm font-bold px-3 py-1 rounded-md">
+                      Sold Out
+                    </span>
+                  </div>
+                )}
+              </div>
+            </a>
+
+            <div class="p-4">
+              <a href={`/products/${product.handle}`} class="block">
+                <h3 class="text-lg font-medium text-gray-900 truncate hover:text-indigo-600 transition">
+                  {product.title}
+                </h3>
+              </a>
+
+              <div class="mt-1 flex items-center">
+                <p class="text-green-600 font-bold">{product.price}</p>
+                {product.compareAtPrice && (
+                  <p class="ml-2 text-sm text-gray-500 line-through">
+                    {product.compareAtPrice}
+                  </p>
+                )}
+              </div>
+
+              {product.description && (
+                <p class="mt-2 text-sm text-gray-500 line-clamp-2">
+                  {product.description}
+                </p>
+              )}
+
+              <div class="mt-4 flex justify-between items-center">
+                <a
+                  href={`/products/${product.handle}`}
+                  class="text-indigo-600 hover:text-indigo-800 font-medium text-sm hover:underline focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  View Details
+                </a>
+                <button
+                  class="add-to-cart bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-product-id={product.id}
+                  data-product-title={product.title}
+                  data-product-price={product.price.replace("$", "")}
+                  data-product-image={product.image}
+                  disabled={!product.availableForSale}
+                  aria-label={
+                    product.availableForSale
+                      ? `Add ${product.title} to cart`
+                      : `${product.title} is sold out`
+                  }
+                >
+                  {product.availableForSale ? "Add to Cart" : "Sold Out"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  {
+    !isLoading && featuredProducts.length === 0 && !error && (
+      <div class="bg-gray-50 p-6 text-center rounded-lg">
+        <svg
+          class="mx-auto h-12 w-12 text-gray-400"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
+          />
+        </svg>
+        <h3 class="mt-2 text-sm font-medium text-gray-900">
+          No featured products
+        </h3>
+        <p class="mt-1 text-sm text-gray-500">
+          No featured products are currently available.
+        </p>
+        <div class="mt-6">
+          <a
+            href="/products"
+            class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            Browse all products
+          </a>
+        </div>
+      </div>
+    )
+  }
+</section>
+
+<script>
+  // Add event listeners for the "Add to Cart" buttons
+  document.addEventListener("DOMContentLoaded", () => {
+    const addToCartButtons = document.querySelectorAll(
+      ".add-to-cart:not([disabled])"
+    );
+
+    addToCartButtons.forEach((button) => {
+      button.addEventListener("click", (e) => {
+        const target = e.currentTarget;
+        const productId = target.getAttribute("data-product-id");
+        const productTitle = target.getAttribute("data-product-title");
+        const productPrice = parseFloat(
+          target.getAttribute("data-product-price")
+        );
+        const productImage = target.getAttribute("data-product-image");
+
+        // Trigger a custom event that the ShopifyCart component can listen for
+        const event = new CustomEvent("product:added-to-cart", {
+          detail: {
+            productId,
+            productTitle,
+            productPrice,
+            productImage,
+          },
+        });
+        window.dispatchEvent(event);
+
+        // Visual feedback
+        const originalText = target.textContent;
+        target.textContent = "Added!";
+        target.classList.add("bg-green-600");
+        target.classList.remove("bg-indigo-600", "hover:bg-indigo-700");
+
+        setTimeout(() => {
+          target.textContent = originalText;
+          target.classList.remove("bg-green-600");
+          target.classList.add("bg-indigo-600", "hover:bg-indigo-700");
+        }, 1500);
+      });
+    });
+  });
+</script>
