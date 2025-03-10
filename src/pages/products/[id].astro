@@ -1,0 +1,169 @@
+---
+// src/pages/products/[id].astro
+import Layout from "../../layouts/Layout.astro";
+import ProductNotFound from "../../components/ProductNotFound.astro";
+import ProductDetailScript from "../../components/ProductDetailScript.astro";
+
+// Get the product ID from the URL parameters
+const { id } = Astro.params;
+
+// Early return if no ID is provided
+if (!id) {
+  return Astro.redirect("/products");
+}
+
+// Fetch product data using the middleware
+let product;
+let error;
+
+try {
+  product = await Astro.locals.shopify.getProductById(id);
+} catch (err) {
+  error = err instanceof Error ? err.message : "Failed to load product";
+  console.error(`Error fetching product ${id}:`, err);
+}
+
+// Format price for display
+const formatPrice = (price: string) => {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(parseFloat(price));
+};
+
+// Calculate savings percentage if there's a compare-at price
+const getSavingsPercentage = (price: string, compareAtPrice?: string) => {
+  if (!compareAtPrice) return null;
+
+  const currentPrice = parseFloat(price);
+  const originalPrice = parseFloat(compareAtPrice);
+
+  if (originalPrice <= currentPrice) return null;
+
+  const savingsPercentage =
+    ((originalPrice - currentPrice) / originalPrice) * 100;
+  return Math.round(savingsPercentage);
+};
+---
+
+<Layout title={product ? `${product.title} | Your Store` : "Product Not Found"}>
+  {
+    error || !product ? (
+      <ProductNotFound error={error} />
+    ) : (
+      <div class="py-8 px-4 md:px-6 lg:px-8">
+        <div class="max-w-7xl mx-auto">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Product Images */}
+            <div class="space-y-4">
+              <div class="bg-gray-100 rounded-lg overflow-hidden aspect-square">
+                <img
+                  src={product.image}
+                  alt={product.title}
+                  class="w-full h-full object-cover object-center"
+                />
+              </div>
+
+              {product.images.length > 1 && (
+                <div class="flex space-x-2 overflow-x-auto pb-2">
+                  {product.images.map((image) => (
+                    <button class="thumbnail w-24 h-24 rounded-md overflow-hidden border-2 border-transparent hover:border-gray-800 transition focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <img
+                        src={image}
+                        alt={product.title}
+                        class="w-full h-full object-cover"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Product Info */}
+            <div class="space-y-6">
+              <h1 class="text-3xl font-bold text-gray-900">{product.title}</h1>
+
+              <div class="flex items-center flex-wrap gap-2">
+                <span class="text-2xl font-bold text-gray-900">
+                  {formatPrice(product.price)}
+                </span>
+
+                {product.compareAtPrice && (
+                  <>
+                    <span class="text-lg text-gray-500 line-through">
+                      {formatPrice(product.compareAtPrice)}
+                    </span>
+                    <span class="px-2 py-1 text-xs font-bold text-white bg-red-600 rounded">
+                      Save{" "}
+                      {getSavingsPercentage(
+                        product.price,
+                        product.compareAtPrice
+                      )}
+                      %
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <div>
+                {product.available ? (
+                  <span class="text-green-600 font-medium">In Stock</span>
+                ) : (
+                  <span class="text-red-600 font-medium">Out of Stock</span>
+                )}
+              </div>
+
+              {product.description && (
+                <div
+                  class="prose prose-sm max-w-none text-gray-700"
+                  set:html={product.description}
+                />
+              )}
+
+              {product.variants.length > 1 && (
+                <div class="space-y-2">
+                  <label
+                    for="variant-select"
+                    class="block text-sm font-medium text-gray-700"
+                  >
+                    Options:
+                  </label>
+                  <select
+                    id="variant-select"
+                    class="block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    {product.variants.map((variant) => (
+                      <option
+                        value={variant.id}
+                        disabled={!variant.available}
+                        class={!variant.available ? "text-gray-400" : ""}
+                      >
+                        {variant.title} - {formatPrice(variant.price)}
+                        {!variant.available && " (Sold Out)"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div class="pt-4">
+                <button
+                  class={`w-full py-3 px-4 rounded-md font-medium text-white ${
+                    product.available
+                      ? "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                      : "bg-gray-400 cursor-not-allowed"
+                  }`}
+                  disabled={!product.available}
+                >
+                  {product.available ? "Add to Cart" : "Sold Out"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  <ProductDetailScript />
+</Layout>

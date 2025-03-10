@@ -1,0 +1,332 @@
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    // Safely query elements with null checking
+    const safeQuery = (selector: any, parent = document) =>
+      parent?.querySelector(selector) || null;
+    const safeQueryAll = (selector: any, parent = document) =>
+      parent?.querySelectorAll(selector) || [];
+
+    // Get elements once and use safely throughout
+    const mainImage = safeQuery(".main-image img");
+    const thumbnails = safeQueryAll(".thumbnail");
+    const variantSelect = document.getElementById("variant-select");
+    const addToCartButton = safeQuery('button[type="submit"]');
+    const form = document.getElementById("product-form");
+    const quantityInput = document.getElementById("quantity");
+
+    /**
+     * Initialize the first thumbnail as active
+     */
+    function initializeThumbnails() {
+      const firstThumbnail = thumbnails[0];
+      if (firstThumbnail) {
+        firstThumbnail.classList.add("border-blue-500");
+        firstThumbnail.setAttribute("aria-current", "true");
+      }
+    }
+
+    /**
+     * Set up thumbnail gallery functionality
+     */
+    function setupThumbnailGallery() {
+      if (!thumbnails.length || !mainImage) return;
+
+      thumbnails.forEach((thumbnail) => {
+        if (!thumbnail) return;
+
+        thumbnail.addEventListener("click", () => {
+          const thumbnailImg = thumbnail.querySelector("img");
+          if (!thumbnailImg || !mainImage) return;
+
+          // Update main image with proper alt text
+          mainImage.src = thumbnailImg.src;
+          if (thumbnailImg.alt) {
+            mainImage.alt = thumbnailImg.alt;
+          }
+
+          // Update active state with accessibility
+          thumbnails.forEach((tb) => {
+            if (!tb) return;
+            tb.classList.remove("border-blue-500");
+            tb.setAttribute("aria-current", "false");
+          });
+
+          thumbnail.classList.add("border-blue-500");
+          thumbnail.setAttribute("aria-current", "true");
+        });
+
+        // Make thumbnails keyboard navigable
+        thumbnail.setAttribute("tabindex", "0");
+        thumbnail.addEventListener("keydown", (e: any) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            thumbnail.click();
+          }
+        });
+      });
+    }
+
+    /**
+     * Set up variant selection handling
+     */
+    function setupVariantSelection() {
+      if (!variantSelect || !addToCartButton) return;
+
+      const updateButtonState = () => {
+        try {
+          // Verify elements still exist in the DOM
+          if (
+            !variantSelect ||
+            !addToCartButton ||
+            !document.body.contains(variantSelect)
+          )
+            return;
+
+          // Verify select element is valid with options
+          if (
+            !(variantSelect instanceof HTMLSelectElement) ||
+            !variantSelect.options
+          ) {
+            console.warn("Invalid variant select element");
+            return;
+          }
+
+          // Validate selected index is within bounds
+          const selectedIndex = variantSelect.selectedIndex;
+          if (
+            selectedIndex < 0 ||
+            selectedIndex >= variantSelect.options.length
+          ) {
+            console.warn(
+              `Invalid selectedIndex: ${selectedIndex}, options length: ${variantSelect.options.length}`
+            );
+            return;
+          }
+
+          // Validate selected option exists
+          const selectedOption = variantSelect.options[selectedIndex];
+          if (
+            !selectedOption ||
+            !(selectedOption instanceof HTMLOptionElement)
+          ) {
+            console.warn("Selected option is invalid");
+            return;
+          }
+
+          const isAvailable = !selectedOption.disabled;
+
+          // Update button state
+          addToCartButton.disabled = !isAvailable;
+          addToCartButton.textContent = isAvailable
+            ? "Add to Cart"
+            : "Sold Out";
+
+          // Update ARIA attributes
+          addToCartButton.setAttribute(
+            "aria-disabled",
+            !isAvailable ? "true" : "false"
+          );
+
+          // Update button classes
+          if (isAvailable) {
+            addToCartButton.classList.remove(
+              "bg-gray-400",
+              "cursor-not-allowed"
+            );
+            addToCartButton.classList.add("bg-blue-600", "hover:bg-blue-700");
+          } else {
+            addToCartButton.classList.remove(
+              "bg-blue-600",
+              "hover:bg-blue-700"
+            );
+            addToCartButton.classList.add("bg-gray-400", "cursor-not-allowed");
+          }
+        } catch (error) {
+          console.error("Error updating button state:", error);
+        }
+      };
+
+      // Set initial state
+      updateButtonState();
+
+      // Listen for changes
+      variantSelect.addEventListener("change", updateButtonState);
+    }
+
+    /**
+     * Create notification message
+     */
+    function createNotification(type: any, message: any) {
+      if (!form) return null;
+
+      const notificationEl = document.createElement("div");
+      const isSuccess = type === "success";
+
+      notificationEl.className = isSuccess
+        ? "mt-4 p-3 bg-green-100 text-green-800 rounded"
+        : "mt-4 p-3 bg-red-100 text-red-800 rounded";
+
+      notificationEl.setAttribute("role", isSuccess ? "status" : "alert");
+
+      if (isSuccess) {
+        notificationEl.setAttribute("aria-live", "polite");
+      }
+
+      notificationEl.innerHTML = `
+          <p class="flex items-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${
+                isSuccess
+                  ? "M5 13l4 4L19 7"
+                  : "M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              }"></path>
+            </svg>
+            ${message}
+          </p>`;
+
+      return notificationEl;
+    }
+
+    /**
+     * Show notification and handle removal
+     */
+    function showNotification(notificationEl: any, duration = 3000) {
+      if (!form || !notificationEl) return;
+
+      form.after(notificationEl);
+
+      setTimeout(() => {
+        notificationEl.style.transition = "opacity 0.5s";
+        notificationEl.style.opacity = "0";
+
+        setTimeout(() => {
+          notificationEl?.remove();
+        }, 500);
+      }, duration);
+    }
+
+    /**
+     * Set up add to cart functionality
+     */
+    function setupAddToCartForm() {
+      if (!form) return;
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+
+        try {
+          // Collect product data safely
+          const pathParts = window.location.pathname.split("/");
+          const productId = pathParts.length
+            ? pathParts[pathParts.length - 1]
+            : "";
+
+          // Get variant ID with robust validation
+          const defaultVariantId = productId || "";
+          let variantId = defaultVariantId;
+
+          try {
+            // Check if select element exists and has a valid selection
+            if (variantSelect instanceof HTMLSelectElement) {
+              const selectedValue = variantSelect.value;
+              // Only use the value if it's not empty and not the default placeholder
+              if (
+                selectedValue &&
+                selectedValue.trim() !== "" &&
+                !selectedValue.includes("Choose")
+              ) {
+                variantId = selectedValue.trim();
+              }
+            }
+          } catch (e) {
+            console.warn(
+              "Error accessing variant selection, using default product ID",
+              e
+            );
+          }
+
+          // Get quantity with comprehensive validation
+          const defaultQuantity = "1";
+          let quantity = defaultQuantity;
+
+          try {
+            // Check if input element exists and has a valid value
+            if (quantityInput instanceof HTMLInputElement) {
+              const inputValue = quantityInput.value;
+              if (inputValue && /^[1-9]\d*$/.test(inputValue)) {
+                // Only accept positive integers (no zero, no decimals)
+                quantity = inputValue;
+              } else {
+                console.warn("Invalid quantity format, using default of 1");
+              }
+            }
+          } catch (e) {
+            console.warn(
+              "Error accessing quantity input, using default of 1",
+              e
+            );
+          }
+
+          if (!productId) {
+            throw new Error("Product ID could not be determined");
+          }
+
+          // Show success message
+          const successMessage = createNotification(
+            "success",
+            "Product added to cart!"
+          );
+          showNotification(successMessage);
+
+          // In a real app, you would send this data to your cart API
+          // Convert quantity to number with validation
+          let quantityNum = 1;
+          try {
+            const parsed = parseInt(quantity, 10);
+            quantityNum = !isNaN(parsed) && parsed > 0 ? parsed : 1;
+          } catch (e) {
+            console.warn("Invalid quantity value, using default of 1");
+          }
+
+          const cartData = {
+            productId,
+            variantId,
+            quantity: quantityNum,
+          };
+
+          console.log("Adding to cart:", cartData);
+
+          // Here you would typically make a fetch request to your API
+          // fetch('/api/cart', {
+          //   method: 'POST',
+          //   headers: { 'Content-Type': 'application/json' },
+          //   body: JSON.stringify(cartData)
+          // });
+        } catch (error) {
+          console.error("Error adding product to cart:", error);
+
+          // Show error message
+          const errorMessage = createNotification(
+            "error",
+            "Could not add product to cart. Please try again."
+          );
+          showNotification(errorMessage);
+        }
+      });
+    }
+
+    // Initialize all functionality - only if needed elements exist
+    if (thumbnails.length > 0) {
+      initializeThumbnails();
+      setupThumbnailGallery();
+    }
+
+    if (variantSelect && addToCartButton) {
+      setupVariantSelection();
+    }
+
+    if (form) {
+      setupAddToCartForm();
+    }
+  });
+</script>
