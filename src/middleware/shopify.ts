@@ -1,9 +1,31 @@
 // src/middleware/shopify.ts
 import type { MiddlewareHandler } from 'astro';
 
-// Configuration
-const SHOPIFY_DOMAIN = "your-store.myshopify.com";
-const SHOPIFY_ACCESS_TOKEN = "your-access-token";
+// Fix for TypeScript not recognizing import.meta.env
+interface ImportMetaEnv {
+  readonly SHOPIFY_DOMAIN?: string;
+  readonly SHOPIFY_ACCESS_TOKEN?: string;
+  // Add other env variables as needed
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
+// Environment variable access - use import.meta.env for Astro
+const getEnvVariable = (key: string, defaultValue: string): string => {
+  // For Astro/Vite environment
+  if (import.meta.env !== undefined) {
+    return (import.meta.env[key as keyof ImportMetaEnv] as string) || defaultValue;
+  }
+  
+  // Fallback (but this likely won't be used in Astro)
+  return defaultValue;
+};
+
+// Configuration with improved environment variable handling
+const SHOPIFY_DOMAIN = getEnvVariable('SHOPIFY_DOMAIN', 'your-store.myshopify.com');
+const SHOPIFY_ACCESS_TOKEN = getEnvVariable('SHOPIFY_ACCESS_TOKEN', 'your-access-token');
 const GRAPHQL_ENDPOINT = `https://${SHOPIFY_DOMAIN}/api/graphql`;
 
 // Interfaces for Shopify types
@@ -103,14 +125,66 @@ declare global {
   }
 }
 
+// For demo purposes - A mock product to use when Shopify credentials aren't configured
+const MOCK_PRODUCT: ShopifyProduct = {
+  id: "12345678",
+  title: "Demo Product",
+  handle: "demo-product",
+  description: "<p>This is a demo product that appears when Shopify credentials aren't configured.</p><p>Update your .env file with real Shopify credentials to see real products.</p>",
+  price: "99.99",
+  compareAtPrice: "129.99",
+  image: "https://via.placeholder.com/500x500.png?text=Demo+Product",
+  images: [
+    "https://via.placeholder.com/500x500.png?text=Demo+Product",
+    "https://via.placeholder.com/500x500.png?text=Demo+Product+2",
+    "https://via.placeholder.com/500x500.png?text=Demo+Product+3",
+  ],
+  variants: [
+    {
+      id: "1",
+      title: "Default",
+      price: "99.99",
+      compareAtPrice: "129.99",
+      available: true,
+      sku: "DEMO-SKU"
+    }
+  ],
+  available: true
+};
+
+// Check if Shopify is properly configured
+const isShopifyConfigured = () => {
+  return SHOPIFY_DOMAIN !== "your-store.myshopify.com" && 
+         SHOPIFY_ACCESS_TOKEN !== "your-access-token";
+};
+
+// Log configuration status on startup
+console.log(`Shopify middleware status: ${isShopifyConfigured() ? 'Configured with real credentials' : 'Using demo mode with mock data'}`);
+if (!isShopifyConfigured()) {
+  console.log(`To use real Shopify data, add SHOPIFY_DOMAIN and SHOPIFY_ACCESS_TOKEN to your .env file`);
+  console.log(`Current domain: ${SHOPIFY_DOMAIN}`);
+}
+
 export const onRequest: MiddlewareHandler = async (context, next) => {
   const { request, locals } = context;
   const url = new URL(request.url);
   
   // Make Shopify client available in Astro components
-  locals.shopify = {
-    getProductById: (id: string) => fetchProductById(id)
-  };
+  // If credentials aren't configured, we'll use mock data
+  if (isShopifyConfigured()) {
+    locals.shopify = {
+      getProductById: (id: string) => fetchProductById(id)
+    };
+  } else {
+    console.warn("Shopify credentials not configured. Using mock data.");
+    locals.shopify = {
+      getProductById: async (id: string) => {
+        // Simulate API delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return { ...MOCK_PRODUCT, id };
+      }
+    };
+  }
   
   // Only handle /api/shopify/products/:id route
   if (!url.pathname.match(/^\/api\/shopify\/products\/[^\/]+$/)) {
@@ -142,12 +216,19 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
       throw new Error('Product ID is required');
     }
     
-    // Format the ID for GraphQL query (if needed)
-    const formattedId = productId.includes('gid://') 
-      ? productId 
-      : `gid://shopify/Product/${productId}`;
+    let product;
     
-    const product = await fetchProductById(formattedId);
+    if (isShopifyConfigured()) {
+      // Format the ID for GraphQL query (if needed)
+      const formattedId = productId.includes('gid://') 
+        ? productId 
+        : `gid://shopify/Product/${productId}`;
+      
+      product = await fetchProductById(formattedId);
+    } else {
+      // Use mock data if Shopify isn't configured
+      product = { ...MOCK_PRODUCT, id: productId };
+    }
     
     // Convert headers to a plain object correctly
     const headerObj: Record<string, string> = {};

@@ -13,18 +13,49 @@ const SAMPLE_PRODUCT_ID = urlProductId || "12345678";
 let product = null;
 let error = null;
 
-try {
-  // Access the Shopify client through locals (provided by the middleware)
-  product = await Astro.locals.shopify.getProductById(SAMPLE_PRODUCT_ID);
-} catch (e) {
-  error = e instanceof Error ? e.message : "An unknown error occurred";
-  console.error(`Error fetching product: ${error}`);
+// Safely check if the Shopify client is available
+if (Astro.locals.shopify) {
+  try {
+    // Access the Shopify client through locals (provided by the middleware)
+    product = await Astro.locals.shopify.getProductById(SAMPLE_PRODUCT_ID);
+  } catch (e) {
+    error = e instanceof Error ? e.message : "An unknown error occurred";
+    console.error(`Error fetching product: ${error}`);
+  }
+} else {
+  error = "Shopify client not available. Check middleware configuration.";
+  console.error(`Error: ${error}`);
 }
 ---
 
 <Layout title="Shopify Product Viewer">
   <section class="mb-10">
     <h2 class="text-xl font-semibold mb-4">Product Viewer</h2>
+
+    <!-- Middleware status indicator -->
+    {
+      !Astro.locals.shopify && (
+        <div class="p-4 mb-6 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700">
+          <p class="font-medium">Middleware Configuration Required</p>
+          <p>The Shopify middleware is not properly initialized. Make sure:</p>
+          <ul class="list-disc pl-5 mt-2">
+            <li>
+              Your <code>astro.config.mjs</code> has{" "}
+              <code>output: 'server'</code> enabled
+            </li>
+            <li>
+              You have a <code>src/middleware.ts</code> file that exports your
+              Shopify middleware
+            </li>
+            <li>
+              The <code>SHOPIFY_DOMAIN</code> and{" "}
+              <code>SHOPIFY_ACCESS_TOKEN</code> are properly set in your
+              middleware
+            </li>
+          </ul>
+        </div>
+      )
+    }
 
     <div class="mb-6 p-4 bg-white rounded-md shadow-sm">
       <form id="product-form" class="flex flex-col md:flex-row gap-4">
@@ -48,6 +79,7 @@ try {
           <button
             type="submit"
             class="px-4 py-2 bg-blue-600 text-white rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            disabled={!Astro.locals.shopify}
           >
             Load Product
           </button>
@@ -65,25 +97,17 @@ try {
       </div>
     </div>
 
-    <!-- Error message container (hidden by default) -->
+    <!-- Error message container -->
     <div
       id="error-container"
-      class="hidden p-4 mb-4 bg-red-50 border-l-4 border-red-500 text-red-700"
+      class={error ? "" : "hidden"}
+      class="p-4 mb-4 bg-red-50 border-l-4 border-red-500 text-red-700"
     >
       <p class="font-medium">Error loading product</p>
-      <p id="error-message"></p>
+      <p id="error-message">{error}</p>
     </div>
 
-    <div id="product-display">
-      {
-        error && (
-          <div class="p-4 mb-4 bg-red-50 border-l-4 border-red-500 text-red-700">
-            <p class="font-medium">Error loading product</p>
-            <p>{error}</p>
-          </div>
-        )
-      }
-
+    <div id="product-display" class={!product || error ? "hidden" : ""}>
       {
         product && (
           <div class="bg-white rounded-lg shadow-md overflow-hidden">
