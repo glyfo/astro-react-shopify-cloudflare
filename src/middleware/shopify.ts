@@ -5,6 +5,7 @@ import type { MiddlewareHandler } from 'astro';
 interface ImportMetaEnv {
   readonly SHOPIFY_DOMAIN?: string;
   readonly SHOPIFY_ACCESS_TOKEN?: string;
+  readonly SHOPIFY_API_VERSION?: string;
   // Add other env variables as needed
 }
 
@@ -26,7 +27,8 @@ const getEnvVariable = (key: string, defaultValue: string): string => {
 // Configuration with improved environment variable handling
 const SHOPIFY_DOMAIN = getEnvVariable('SHOPIFY_DOMAIN', 'your-store.myshopify.com');
 const SHOPIFY_ACCESS_TOKEN = getEnvVariable('SHOPIFY_ACCESS_TOKEN', 'your-access-token');
-const GRAPHQL_ENDPOINT = `https://${SHOPIFY_DOMAIN}/api/graphql`;
+const SHOPIFY_API_VERSION = getEnvVariable('SHOPIFY_API_VERSION', '2023-10'); // Use a specific API version
+const GRAPHQL_ENDPOINT = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
 
 // Interfaces for Shopify types
 interface ShopifyPrice {
@@ -158,11 +160,25 @@ const isShopifyConfigured = () => {
          SHOPIFY_ACCESS_TOKEN !== "your-access-token";
 };
 
+// Validate Shopify Access Token format - this helps catch common errors
+const isValidAccessToken = (token: string) => {
+  // Shopify access tokens typically start with 'shpat_', 'shpca_', or 'shppa_' for different types
+  return /^shp[a-z]{2}_[a-fA-F0-9]{32}$/.test(token);
+};
+
 // Log configuration status on startup
-console.log(`Shopify middleware status: ${isShopifyConfigured() ? 'Configured with real credentials' : 'Using demo mode with mock data'}`);
+console.log(`Shopify middleware status: ${isShopifyConfigured() ? 'Configured' : 'Using demo mode with mock data'}`);
 if (!isShopifyConfigured()) {
   console.log(`To use real Shopify data, add SHOPIFY_DOMAIN and SHOPIFY_ACCESS_TOKEN to your .env file`);
-  console.log(`Current domain: ${SHOPIFY_DOMAIN}`);
+} else {
+  // Validate the access token format
+  if (!isValidAccessToken(SHOPIFY_ACCESS_TOKEN)) {
+    console.warn(`WARNING: Your Shopify access token doesn't match the expected format.`);
+    console.warn(`Tokens usually start with 'shpat_', 'shpca_', or 'shppa_' followed by 32 hexadecimal characters.`);
+    console.warn(`Current token: ${SHOPIFY_ACCESS_TOKEN.slice(0, 8)}...`);
+  }
+  
+  console.log(`Using Shopify API endpoint: ${GRAPHQL_ENDPOINT}`);
 }
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
@@ -250,11 +266,27 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
       headerObj[key] = value;
     });
     
+    // Provide more helpful error messages for common issues
+    let userFriendlyMessage = errorMessage;
+    let statusCode = 500;
+    
+    if (errorMessage.includes('403')) {
+      userFriendlyMessage = 'Authentication error with Shopify. Please check your access token and permissions.';
+      statusCode = 403;
+    } else if (errorMessage.includes('404')) {
+      userFriendlyMessage = 'Product not found or API endpoint is incorrect.';
+      statusCode = 404;
+    } else if (errorMessage.includes('429')) {
+      userFriendlyMessage = 'Rate limit exceeded. Too many requests to Shopify API.';
+      statusCode = 429;
+    }
+    
     return new Response(JSON.stringify({
       status: 'error',
-      message: errorMessage
+      message: userFriendlyMessage,
+      details: errorMessage
     }), {
-      status: 500,
+      status: statusCode,
       headers: { 'Content-Type': 'application/json', ...headerObj }
     });
   }
@@ -264,30 +296,66 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
  * Execute a GraphQL query to Shopify with strong typing
  */
 async function executeGraphQL<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-  const response = await fetch(GRAPHQL_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN
-    },
-    body: JSON.stringify({ query, variables })
-  });
+  try {
+    const response = await fetch(GRAPHQL_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN
+      },
+      body: JSON.stringify({ query, variables })
+    });
 
-  if (!response.ok) {
-    throw new Error(`Shopify GraphQL error: ${response.status}`);
+    // Get the raw response text first for better error diagnostics
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      console.error(`Shopify GraphQL error ${response.status}: ${responseText}`);
+      throw new Error(`Shopify GraphQL error: ${response.status}`);
+    }
+    
+    // Try to parse the response as JSON
+    let result;
+    try {
+      result = JSON.parse(responseText) as GraphQLResponse<T>;
+    } catch (e) {
+      console.error('Failed to parse Shopify response as JSON:', responseText);
+      throw new Error('Invalid JSON response from Shopify');
+    }
+    
+    if (result.errors && result.errors.length > 0) {
+      const errorMessage = result.errors[0].message;
+      console.error('Shopify GraphQL returned errors:', JSON.stringify(result.errors));
+      throw new Error(errorMessage);
+    }
+    
+    if (!result.data) {
+      console.error('No data returned from Shopify:', responseText);
+      throw new Error('No data returned from Shopify');
+    }
+    
+    return result.data;
+  } catch (error) {
+    // Enhance error with more diagnostic information
+    if (error instanceof Error) {
+      console.error(`GraphQL execution failed: ${error.message}`);
+      console.error(`Endpoint: ${GRAPHQL_ENDPOINT}`);
+      console.error(`Query: ${query.substring(0, 100)}...`);
+      console.error(`Variables: ${JSON.stringify(variables)}`);
+      
+      // Check for common authentication issues
+      if (error.message.includes('403')) {
+        console.error('This appears to be an authentication issue. Please check:');
+        console.error('1. Your Shopify access token is correct and has the necessary permissions');
+        console.error('2. Your Shopify domain is correct');
+        console.error('3. Your API version is supported');
+        console.error(`Current access token (first 5 chars): ${SHOPIFY_ACCESS_TOKEN.slice(0, 5)}...`);
+        console.error(`Current domain: ${SHOPIFY_DOMAIN}`);
+        console.error(`Current API version: ${SHOPIFY_API_VERSION}`);
+      }
+    }
+    throw error;
   }
-
-  const result = await response.json() as GraphQLResponse<T>;
-  
-  if (result.errors && result.errors.length > 0) {
-    throw new Error(result.errors[0].message);
-  }
-  
-  if (!result.data) {
-    throw new Error('No data returned from Shopify');
-  }
-  
-  return result.data;
 }
 
 /**
